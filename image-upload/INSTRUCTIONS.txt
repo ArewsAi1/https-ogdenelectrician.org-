@@ -1,0 +1,57 @@
+CLOUDFLARE KV IMAGE UPLOAD - STEP BY STEP
+==========================================
+
+STEP 1: Download & Extract
+---------------------------
+1. Download the optimized images package from the link provided
+2. Extract/unzip the package into this "image-upload" folder
+3. You should see "image-upload.json" appear in this folder
+
+STEP 2: Upload to Cloudflare KV
+--------------------------------
+
+WINDOWS USERS:
+- Simply double-click "upload.bat"
+- The script will handle everything
+
+MAC/LINUX USERS:
+- Open Terminal in this folder
+- Run: chmod +x upload.sh
+- Run: ./upload.sh
+- Or manually run: npx wrangler kv bulk put image-upload.json --namespace-id 3c9e34f463394469837a6e8744a0602e
+
+POWERSHELL (Windows/Mac/Linux):
+- Open PowerShell in this folder
+- Run: npx wrangler kv bulk put image-upload.json --namespace-id 3c9e34f463394469837a6e8744a0602e
+
+STEP 3: Verify Upload
+----------------------
+After the script completes:
+- Look for "✓" success message
+- Check Cloudflare dashboard → KV namespace for image entries
+- Your images are now in the KV store
+
+TROUBLESHOOTING
+===============
+
+Q: "Command not found" or "npx not recognized"
+A: Install Node.js from https://nodejs.org/
+
+Q: "wrangler: command not found"
+A: Run "npm install -g wrangler"
+
+Q: "image-upload.json not found"
+A: Make sure you extracted the ZIP file in this folder first
+
+Q: "Authentication failed"
+A: Run "wrangler login" to authenticate with Cloudflare
+
+Q: "Invalid namespace-id"
+A: Verify the namespace ID: 3c9e34f463394469837a6e8744a0602e
+
+REFERENCE
+=========
+Namespace ID: 3c9e34f463394469837a6e8744a0602e
+Repository: https://github.com/ArewsAi1/https-ogdenelectrician.org-
+
+Need more help? See README.md in this folder.
