@@ -9,8 +9,6 @@ on:
       - '*.jpeg'
       - '*.png'
       - '*.webp'
-      - '*.gif'
-      - '*.svg'
       - '.github/workflows/upload-images-to-cloudflare.yml'
 
 permissions:
@@ -20,51 +18,44 @@ permissions:
 jobs:
   upload-images:
     runs-on: ubuntu-latest
-    env:
-      RAW_CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ce0b2ff32c4f7327c83e7704c33a7c8c
-      KV_NAMESPACE_ID: 3c9e34f463394469837a6e8744a0602e
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Normalize Cloudflare token
-        shell: bash
-        run: |
-          set -euo pipefail
-          token="${RAW_CLOUDFLARE_API_TOKEN:-}"
-          token="$(printf '%s' "$token" | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/^Bearer[[:space:]]+//I; s/^"//; s/"$//; s/^'\''//; s/'\''$//')"
-          if [ -z "$token" ]; then
-            echo "Missing repository secret: CLOUDFLARE_API_TOKEN"
-            exit 1
-          fi
-          echo "::add-mask::$token"
-          printf 'CLOUDFLARE_API_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
-          echo "Cloudflare token normalized."
-
-      - name: Install Wrangler
-        run: npm install --global wrangler@latest
-
-      - name: Upload and verify
-        id: deploy
+      - name: Upload images through temporary Cloudflare Worker
+        id: upload
         continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
           : > /tmp/cloudflare-upload.log
-
-          echo "=== Wrangler authentication ===" | tee -a /tmp/cloudflare-upload.log
-          wrangler whoami 2>&1 | tee -a /tmp/cloudflare-upload.log || exit 1
-
+          endpoint='https://ogdenelectrician-image-uploader.aj-ce0.workers.dev/upload-7f3c9a1e5b2d4f6a8c0e9d1b3a5f7c2e'
           uploaded=0
-          echo "=== Image upload ===" | tee -a /tmp/cloudflare-upload.log
+
           while IFS= read -r -d '' file; do
             filename="$(basename "$file")"
-            key="/assets/images/$filename"
-            echo "Uploading $key" | tee -a /tmp/cloudflare-upload.log
-            wrangler kv key put "$key" --namespace-id "$KV_NAMESPACE_ID" --path "$file" --remote 2>&1 | tee -a /tmp/cloudflare-upload.log || exit 1
+            case "${filename,,}" in
+              *.jpg|*.jpeg) content_type='image/jpeg' ;;
+              *.png) content_type='image/png' ;;
+              *.webp) content_type='image/webp' ;;
+              *) continue ;;
+            esac
+
+            echo "Uploading $filename" | tee -a /tmp/cloudflare-upload.log
+            status="$(curl --silent --show-error --output /tmp/upload-response.json --write-out '%{http_code}' \
+              --request PUT \
+              --header "Content-Type: ${content_type}" \
+              --data-binary "@${file}" \
+              "${endpoint}?name=${filename}")"
+
+            cat /tmp/upload-response.json | tee -a /tmp/cloudflare-upload.log
+            echo | tee -a /tmp/cloudflare-upload.log
+
+            if [ "$status" != '200' ]; then
+              echo "Upload failed with HTTP $status for $filename" | tee -a /tmp/cloudflare-upload.log
+              exit 1
+            fi
             uploaded=$((uploaded + 1))
-          done < <(find . -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.gif' -o -iname '*.svg' \) -print0)
+          done < <(find . -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -print0)
 
           echo "Uploaded files: $uploaded" | tee -a /tmp/cloudflare-upload.log
           if [ "$uploaded" -lt 70 ]; then
@@ -72,27 +63,23 @@ jobs:
             exit 1
           fi
 
-          echo "=== Remote verification ===" | tee -a /tmp/cloudflare-upload.log
-          wrangler kv key list --namespace-id "$KV_NAMESPACE_ID" --prefix "/assets/images/" --remote 2>&1 | tee -a /tmp/cloudflare-upload.log
-
       - name: Report diagnostic issue
-        if: steps.deploy.outcome == 'failure'
+        if: steps.upload.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          sed -E 's/(Bearer|token|Token|TOKEN)[=: ]+[A-Za-z0-9._-]+/\1 [REDACTED]/g' /tmp/cloudflare-upload.log > /tmp/redacted.log
           {
-            echo 'The automated Cloudflare image upload failed.'
+            echo 'The temporary Worker image upload failed.'
             echo
             echo '```text'
-            tail -n 120 /tmp/redacted.log
+            tail -n 120 /tmp/cloudflare-upload.log
             echo '```'
             echo
             echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           } > /tmp/issue-body.md
-          gh issue create --title "Cloudflare image upload diagnostic" --body-file /tmp/issue-body.md
+          gh issue create --title "Temporary Worker image upload diagnostic" --body-file /tmp/issue-body.md
 
       - name: Fail workflow when upload failed
-        if: steps.deploy.outcome == 'failure'
+        if: steps.upload.outcome == 'failure'
         run: exit 1
