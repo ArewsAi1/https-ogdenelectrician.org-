@@ -19,90 +19,69 @@ permissions:
 jobs:
   upload-images:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ce0b2ff32c4f7327c83e7704c33a7c8c
+      KV_NAMESPACE_ID: 3c9e34f463394469837a6e8744a0602e
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Upload optimized images to Cloudflare KV
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ce0b2ff32c4f7327c83e7704c33a7c8c
-          KV_NAMESPACE_ID: 3c9e34f463394469837a6e8744a0602e
+      - name: Validate secret
         shell: bash
         run: |
           set -euo pipefail
-
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
             echo "Missing repository secret: CLOUDFLARE_API_TOKEN"
             exit 1
           fi
+          echo "Cloudflare token is present."
 
+      - name: Install Wrangler
+        run: npm install --global wrangler@latest
+
+      - name: Verify Cloudflare authentication
+        run: wrangler whoami
+
+      - name: Upload optimized images with Wrangler
+        shell: bash
+        run: |
+          set -euo pipefail
           uploaded=0
-          failed=0
 
           while IFS= read -r -d '' file; do
             filename="$(basename "$file")"
             key="/assets/images/$filename"
-
-            case "${filename,,}" in
-              *.jpg|*.jpeg) content_type="image/jpeg" ;;
-              *.png) content_type="image/png" ;;
-              *.webp) content_type="image/webp" ;;
-              *.gif) content_type="image/gif" ;;
-              *.svg) content_type="image/svg+xml" ;;
-              *) continue ;;
-            esac
-
-            encoded_key="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$key")"
-            endpoint="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${KV_NAMESPACE_ID}/values/${encoded_key}"
-
-            status="$(curl --silent --show-error --output /tmp/cf-response.json --write-out '%{http_code}' \
-              --request PUT \
-              --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-              --header "Content-Type: ${content_type}" \
-              --data-binary "@${file}" \
-              "$endpoint")"
-
-            if [ "$status" = "200" ]; then
-              echo "Uploaded: $key"
-              uploaded=$((uploaded + 1))
-            else
-              echo "Failed ($status): $key"
-              cat /tmp/cf-response.json || true
-              failed=$((failed + 1))
-            fi
+            echo "Uploading $key"
+            wrangler kv key put "$key" \
+              --namespace-id "$KV_NAMESPACE_ID" \
+              --path "$file" \
+              --remote
+            uploaded=$((uploaded + 1))
           done < <(find . -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.gif' -o -iname '*.svg' \) -print0)
 
-          echo "Uploaded: $uploaded"
-          echo "Failed: $failed"
-
-          if [ "$failed" -ne 0 ]; then
+          echo "Uploaded files: $uploaded"
+          if [ "$uploaded" -lt 70 ]; then
+            echo "Expected at least 70 image files in the repository root."
             exit 1
           fi
 
-      - name: Verify uploaded image keys
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ce0b2ff32c4f7327c83e7704c33a7c8c
-          KV_NAMESPACE_ID: 3c9e34f463394469837a6e8744a0602e
+      - name: Verify remote KV image count
         shell: bash
         run: |
           set -euo pipefail
-          curl --silent --show-error \
-            --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${KV_NAMESPACE_ID}/keys?prefix=%2Fassets%2Fimages%2F&limit=1000" \
+          wrangler kv key list \
+            --namespace-id "$KV_NAMESPACE_ID" \
+            --prefix "/assets/images/" \
+            --remote \
             > /tmp/kv-keys.json
 
           python3 - <<'PY'
           import json
           with open('/tmp/kv-keys.json', 'r', encoding='utf-8') as f:
               data = json.load(f)
-          if not data.get('success'):
-              raise SystemExit(json.dumps(data, indent=2))
-          names = [item['name'] for item in data.get('result', [])]
-          print(f"Cloudflare KV image keys found: {len(names)}")
-          if len(names) < 70:
-              raise SystemExit(f"Expected at least 70 image keys, found {len(names)}")
+          print(f"Cloudflare KV image keys found: {len(data)}")
+          if len(data) < 70:
+              raise SystemExit(f"Expected at least 70 image keys, found {len(data)}")
           PY
-
-# Manual retrigger after adding the repository secret.
