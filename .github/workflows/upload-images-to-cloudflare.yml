@@ -104,3 +104,5 @@ jobs:
           if len(names) < 70:
               raise SystemExit(f"Expected at least 70 image keys, found {len(names)}")
           PY
+
+# Manual retrigger after adding the repository secret.
