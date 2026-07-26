@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   upload-images:
@@ -25,63 +26,64 @@ jobs:
       KV_NAMESPACE_ID: 3c9e34f463394469837a6e8744a0602e
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Validate secret
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "Missing repository secret: CLOUDFLARE_API_TOKEN"
-            exit 1
-          fi
-          echo "Cloudflare token is present."
+      - uses: actions/checkout@v4
 
       - name: Install Wrangler
         run: npm install --global wrangler@latest
 
-      - name: Verify Cloudflare authentication
-        run: wrangler whoami
-
-      - name: Upload optimized images with Wrangler
+      - name: Upload and verify
+        id: deploy
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
-          uploaded=0
+          set -o pipefail
+          : > /tmp/cloudflare-upload.log
 
-          while IFS= read -r -d '' file; do
-            filename="$(basename "$file")"
-            key="/assets/images/$filename"
-            echo "Uploading $key"
-            wrangler kv key put "$key" \
-              --namespace-id "$KV_NAMESPACE_ID" \
-              --path "$file" \
-              --remote
-            uploaded=$((uploaded + 1))
-          done < <(find . -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.gif' -o -iname '*.svg' \) -print0)
-
-          echo "Uploaded files: $uploaded"
-          if [ "$uploaded" -lt 70 ]; then
-            echo "Expected at least 70 image files in the repository root."
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "Missing repository secret: CLOUDFLARE_API_TOKEN" | tee -a /tmp/cloudflare-upload.log
             exit 1
           fi
 
-      - name: Verify remote KV image count
+          echo "=== Wrangler authentication ===" | tee -a /tmp/cloudflare-upload.log
+          wrangler whoami 2>&1 | tee -a /tmp/cloudflare-upload.log || exit 1
+
+          uploaded=0
+          echo "=== Image upload ===" | tee -a /tmp/cloudflare-upload.log
+          while IFS= read -r -d '' file; do
+            filename="$(basename "$file")"
+            key="/assets/images/$filename"
+            echo "Uploading $key" | tee -a /tmp/cloudflare-upload.log
+            wrangler kv key put "$key" --namespace-id "$KV_NAMESPACE_ID" --path "$file" --remote 2>&1 | tee -a /tmp/cloudflare-upload.log || exit 1
+            uploaded=$((uploaded + 1))
+          done < <(find . -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' -o -iname '*.gif' -o -iname '*.svg' \) -print0)
+
+          echo "Uploaded files: $uploaded" | tee -a /tmp/cloudflare-upload.log
+          if [ "$uploaded" -lt 70 ]; then
+            echo "Expected at least 70 image files." | tee -a /tmp/cloudflare-upload.log
+            exit 1
+          fi
+
+          echo "=== Remote verification ===" | tee -a /tmp/cloudflare-upload.log
+          wrangler kv key list --namespace-id "$KV_NAMESPACE_ID" --prefix "/assets/images/" --remote 2>&1 | tee -a /tmp/cloudflare-upload.log
+
+      - name: Report diagnostic issue
+        if: steps.deploy.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          set -euo pipefail
-          wrangler kv key list \
-            --namespace-id "$KV_NAMESPACE_ID" \
-            --prefix "/assets/images/" \
-            --remote \
-            > /tmp/kv-keys.json
+          sed -E 's/(Bearer|token|Token|TOKEN)[=: ]+[A-Za-z0-9._-]+/\1 [REDACTED]/g' /tmp/cloudflare-upload.log > /tmp/redacted.log
+          {
+            echo 'The automated Cloudflare image upload failed.'
+            echo
+            echo '```text'
+            tail -n 120 /tmp/redacted.log
+            echo '```'
+            echo
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > /tmp/issue-body.md
+          gh issue create --title "Cloudflare image upload diagnostic" --body-file /tmp/issue-body.md
 
-          python3 - <<'PY'
-          import json
-          with open('/tmp/kv-keys.json', 'r', encoding='utf-8') as f:
-              data = json.load(f)
-          print(f"Cloudflare KV image keys found: {len(data)}")
-          if len(data) < 70:
-              raise SystemExit(f"Expected at least 70 image keys, found {len(data)}")
-          PY
+      - name: Fail workflow when upload failed
+        if: steps.deploy.outcome == 'failure'
+        run: exit 1
