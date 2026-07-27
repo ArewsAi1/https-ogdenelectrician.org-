@@ -1,0 +1,35 @@
+name: Upload Taxidermy Images to KV
+
+on:
+  push:
+    paths:
+      - 'temp-taxidermy/*.webp.b64'
+      - '.github/workflows/upload-taxidermy-kv.yml'
+  workflow_dispatch:
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload images to Cloudflare KV
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT_ID: ce0b2ff32c4f7327c83e7704c33a7c8c
+          NAMESPACE_ID: bae7c4d3030b47cdaa2a46f6a433c17b
+        run: |
+          set -euo pipefail
+          test -n "$CF_TOKEN"
+          for source in temp-taxidermy/*.webp.b64; do
+            [ -e "$source" ] || continue
+            name="$(basename "$source" .b64)"
+            base64 --decode "$source" > "/tmp/$name"
+            key="%2Fassets%2Fimages%2F$name"
+            curl --fail-with-body --silent --show-error \
+              -X PUT \
+              -H "Authorization: Bearer $CF_TOKEN" \
+              -H "Content-Type: image/webp" \
+              --data-binary "@/tmp/$name" \
+              "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/storage/kv/namespaces/$NAMESPACE_ID/values/$key"
+            echo "Uploaded $name ($(wc -c < "/tmp/$name") bytes)"
+          done
