@@ -1,10 +1,6 @@
-name: Upload Taxidermy Images to KV
+name: Upload Preference Taxidermy Static Assets
 
 on:
-  push:
-    paths:
-      - 'temp-taxidermy/*.webp.b64'
-      - '.github/workflows/upload-taxidermy-kv.yml'
   pull_request:
     paths:
       - 'temp-taxidermy/**'
@@ -16,28 +12,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Upload images to Cloudflare KV
+      - name: Upload static image assets
         env:
-          CF_TOKEN_PRIMARY: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_TOKEN_WRANGLER: ${{ secrets.CF_API_TOKEN }}
-          CF_TOKEN_ALT: ${{ secrets.CLOUDFLARE_TOKEN }}
-          CF_TOKEN_SHORT: ${{ secrets.CF_TOKEN }}
           ACCOUNT_ID: ce0b2ff32c4f7327c83e7704c33a7c8c
-          NAMESPACE_ID: bae7c4d3030b47cdaa2a46f6a433c17b
+          UPLOAD_JWT: cfwau_eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FwaS53b3JrZXJzLmNsb3VkZmxhcmUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkud29ya2Vycy5jbG91ZGZsYXJlLmNvbSIsImV4cCI6MTc4NTEyNDk2NywibmJmIjoxNzg1MTIxMzY3LCJpYXQiOjE3ODUxMjEzNjcsIm1hbmlmZXN0X2lkIjoiOWZmNDljODktMTNlMS00ZjQ1LWJmMTQtZWUwODIwNTkwMDg5IiwiYWNjb3VudF9pZCI6MTE1ODcwMTIwLCJ1c2Vfc3FsIjp0cnVlLCJlZGdlX2t2IjpmYWxzZSwid3JhbmdsZXJfc2luZ2xlX2Fzc2V0X3VwbG9hZHMiOmZhbHNlfQ.ZGxhmGPUlfCpqKdVLlJLrLZhuwpknHKjUSg9BcLP4pxWhCXprWy6nRr9BCwE5hSaj8h-RjAXafD0fml02yJ5BQ
         run: |
           set -euo pipefail
-          CF_TOKEN="${CF_TOKEN_PRIMARY:-${CF_TOKEN_WRANGLER:-${CF_TOKEN_ALT:-${CF_TOKEN_SHORT:-}}}}"
-          test -n "$CF_TOKEN"
-          for source in temp-taxidermy/*.webp.b64; do
-            [ -e "$source" ] || continue
-            name="$(basename "$source" .b64)"
-            base64 --decode "$source" > "/tmp/$name"
-            key="%2Fassets%2Fimages%2F$name"
-            curl --fail-with-body --silent --show-error \
-              -X PUT \
-              -H "Authorization: Bearer $CF_TOKEN" \
-              -H "Content-Type: image/webp" \
-              --data-binary "@/tmp/$name" \
-              "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/storage/kv/namespaces/$NAMESPACE_ID/values/$key"
-            echo "Uploaded $name ($(wc -c < "/tmp/$name") bytes)"
-          done
+          completion=''
+          upload_one() {
+            local name="$1"
+            local hash="$2"
+            local source="temp-taxidermy/${name}.webp.b64"
+            test -s "$source"
+            response=$(curl --fail-with-body --silent --show-error \
+              -X POST \
+              -H "Authorization: Bearer $UPLOAD_JWT" \
+              -F "${hash}=<${source};type=image/webp" \
+              "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/assets/upload?base64=true")
+            echo "$response"
+            token=$(printf '%s' "$response" | python -c 'import json,sys; print((json.load(sys.stdin).get("result") or {}).get("jwt") or "")')
+            if [ -n "$token" ]; then completion="$token"; fi
+          }
+          upload_one taxidermy-03 92c52077b585735585772061ba0f2653
+          upload_one taxidermy-06 bcd2cd7802607e8860b7fb21462522ca
+          upload_one taxidermy-05 9dadc665704e7ce562a3926a4e0c235e
+          test -n "$completion"
+          echo "COMPLETION_JWT=$completion"
