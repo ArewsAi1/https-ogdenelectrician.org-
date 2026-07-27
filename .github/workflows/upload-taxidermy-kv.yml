@@ -1,10 +1,41 @@
-name: Preference Taxidermy Asset Upload Disabled
+name: One-Time Preference Static Asset Upload
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'temp-taxidermy/static-assets-trigger.txt'
+      - '.github/workflows/upload-taxidermy-kv.yml'
 
 jobs:
-  disabled:
+  upload:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Temporary upload workflow disabled after migration testing."
+      - uses: actions/checkout@v4
+      - name: Upload assets with short-lived session
+        env:
+          ACCOUNT_ID: ce0b2ff32c4f7327c83e7704c33a7c8c
+          UPLOAD_JWT: cfwau_eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FwaS53b3JrZXJzLmNsb3VkZmxhcmUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkud29ya2Vycy5jbG91ZGZsYXJlLmNvbSIsImV4cCI6MTc4NTEyNTE0MSwibmJmIjoxNzg1MTIxNTQxLCJpYXQiOjE3ODUxMjE1NDEsIm1hbmlmZXN0X2lkIjoiYmYzMzgyNDYtZWM5My00OGEwLWI3NzktMTc1MGE5Y2I5ZjBlIiwiYWNjb3VudF9pZCI6MTE1ODcwMTIwLCJ1c2Vfc3FsIjp0cnVlLCJlZGdlX2t2IjpmYWxzZSwid3JhbmdsZXJfc2luZ2xlX2Fzc2V0X3VwbG9hZHMiOmZhbHNlfQ.-amgHsG56R31O8NLx5S3ttm4oWYb5EmPh8mkTFH9YUv8VfvHqG-C86I1U8Zg2GWwCaeId8Anc54HpzuUncrKAg
+        run: |
+          set -euo pipefail
+          completion=''
+          upload_one() {
+            local name="$1"
+            local hash="$2"
+            local source="temp-taxidermy/${name}.webp.b64"
+            test -s "$source"
+            response=$(curl --fail-with-body --silent --show-error \
+              -X POST \
+              -H "Authorization: Bearer $UPLOAD_JWT" \
+              -F "${hash}=<${source};type=image/webp" \
+              "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/assets/upload?base64=true")
+            echo "$response"
+            token=$(printf '%s' "$response" | python -c 'import json,sys; print((json.load(sys.stdin).get("result") or {}).get("jwt") or "")')
+            if [ -n "$token" ]; then completion="$token"; fi
+          }
+          upload_one taxidermy-03 92c52077b585735585772061ba0f2653
+          upload_one taxidermy-06 bcd2cd7802607e8860b7fb21462522ca
+          upload_one taxidermy-05 9dadc665704e7ce562a3926a4e0c235e
+          test -n "$completion"
+          echo "COMPLETION_JWT=$completion"
