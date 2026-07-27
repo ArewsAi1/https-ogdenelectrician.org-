@@ -1,0 +1,38 @@
+name: Preference Static Assets Upload
+
+on:
+  push:
+    branches:
+      - trigger-static-assets-upload
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload assets using short-lived session
+        env:
+          ACCOUNT_ID: ce0b2ff32c4f7327c83e7704c33a7c8c
+          UPLOAD_JWT: cfwau_eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FwaS53b3JrZXJzLmNsb3VkZmxhcmUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkud29ya2Vycy5jbG91ZGZsYXJlLmNvbSIsImV4cCI6MTc4NTEyNTEwOSwibmJmIjoxNzg1MTIxNTA5LCJpYXQiOjE3ODUxMjE1MDksIm1hbmlmZXN0X2lkIjoiMTYyMTljZDQtMjljNi00NTM1LTk4YzctNDYxYWExOWE1NTIyIiwiYWNjb3VudF9pZCI6MTE1ODcwMTIwLCJ1c2Vfc3FsIjp0cnVlLCJlZGdlX2t2IjpmYWxzZSwid3JhbmdsZXJfc2luZ2xlX2Fzc2V0X3VwbG9hZHMiOmZhbHNlfQ.rifNMbosDZNRd486Z-ljRKpRJEk84z3kXUyBx1QRO_TSONUCDy3BoyWGgIjZWHu-sOpCn8KYOKxbyE0SL5ZjDw
+        run: |
+          set -euo pipefail
+          completion=''
+          upload_one() {
+            local name="$1"
+            local hash="$2"
+            local source="temp-taxidermy/${name}.webp.b64"
+            test -s "$source"
+            response=$(curl --fail-with-body --silent --show-error \
+              -X POST \
+              -H "Authorization: Bearer $UPLOAD_JWT" \
+              -F "${hash}=<${source};type=image/webp" \
+              "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/assets/upload?base64=true")
+            echo "$response"
+            token=$(printf '%s' "$response" | python -c 'import json,sys; print((json.load(sys.stdin).get("result") or {}).get("jwt") or "")')
+            if [ -n "$token" ]; then completion="$token"; fi
+          }
+          upload_one taxidermy-03 92c52077b585735585772061ba0f2653
+          upload_one taxidermy-06 bcd2cd7802607e8860b7fb21462522ca
+          upload_one taxidermy-05 9dadc665704e7ce562a3926a4e0c235e
+          test -n "$completion"
+          echo "COMPLETION_JWT=$completion"
