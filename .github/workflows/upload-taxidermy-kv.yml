@@ -5,6 +5,10 @@ on:
     paths:
       - 'temp-taxidermy/*.webp.b64'
       - '.github/workflows/upload-taxidermy-kv.yml'
+  pull_request:
+    paths:
+      - 'temp-taxidermy/**'
+      - '.github/workflows/upload-taxidermy-kv.yml'
   workflow_dispatch:
 
 jobs:
