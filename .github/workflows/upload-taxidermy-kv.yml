@@ -1,4 +1,4 @@
-name: Upload Preference Static Assets
+name: Upload Preference Static Asset Proof
 
 on:
   pull_request:
@@ -10,23 +10,15 @@ jobs:
   upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Upload three verified assets
+      - name: Upload verified recovered WebP
         env:
           ACCOUNT_ID: ce0b2ff32c4f7327c83e7704c33a7c8c
-          UPLOAD_JWT: cfwau_eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FwaS53b3JrZXJzLmNsb3VkZmxhcmUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkud29ya2Vycy5jbG91ZGZsYXJlLmNvbSIsImV4cCI6MTc4NTEyNTU3OSwibmJmIjoxNzg1MTIxOTc5LCJpYXQiOjE3ODUxMjE5NzksIm1hbmlmZXN0X2lkIjoiZjMxZTllZjctOGFiYy00N2RiLTlmMWItNzAwNTA1ZmM5NzE1IiwiYWNjb3VudF9pZCI6MTE1ODcwMTIwLCJ1c2Vfc3FsIjp0cnVlLCJlZGdlX2t2IjpmYWxzZSwid3JhbmdsZXJfc2luZ2xlX2Fzc2V0X3VwbG9hZHMiOmZhbHNlfQ.iecUu39k6gk0koZjy_dudAEhl39maYCpJsPVFpuQRjjfJvZ_46qys-AumGH31LhhKgd4Jlho7sdg6qvAkC_sCA
+          UPLOAD_JWT: cfwau_eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FwaS53b3JrZXJzLmNsb3VkZmxhcmUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkud29ya2Vycy5jbG91ZGZsYXJlLmNvbSIsImV4cCI6MTc4NTEyNTgzNCwibmJmIjoxNzg1MTIyMjM0LCJpYXQiOjE3ODUxMjIyMzQsIm1hbmlmZXN0X2lkIjoiYTRhZTI2YTktMTQ5Ni00MDZmLWFmZjItNzY2NmYwZjYxMmY2IiwiYWNjb3VudF9pZCI6MTE1ODcwMTIwLCJ1c2Vfc3FsIjp0cnVlLCJlZGdlX2t2IjpmYWxzZSwid3JhbmdsZXJfc2luZ2xlX2Fzc2V0X3VwbG9hZHMiOmZhbHNlfQ.A50TGEPFgVVHU3KMoR3NFqz3hLoaUTHowp9n46xTaYHPGF4Xp7JA1RnT5UE3G5ewIddiLyZRNXNasOtB6-KgBA
         run: |
           set -euo pipefail
-          upload_one() {
-            local name="$1"
-            local hash="$2"
-            curl -fsSL "https://raw.githubusercontent.com/ArewsAi1/https-ogdenelectrician.org-/main/temp-taxidermy/${name}.webp.b64" -o "/tmp/${name}.b64"
-            response=$(curl --fail-with-body --silent --show-error \
-              -X POST \
-              -H "Authorization: Bearer $UPLOAD_JWT" \
-              --form-string "${hash}=$(cat /tmp/${name}.b64)" \
-              "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/assets/upload?base64=true")
-            echo "$response"
-          }
-          upload_one taxidermy-03 92c52077b585735585772061ba0f2653
-          upload_one taxidermy-06 bcd2cd7802607e8860b7fb21462522ca
-          upload_one taxidermy-05 9dadc665704e7ce562a3926a4e0c235e
+          curl -fsSL 'https://raw.githubusercontent.com/ArewsAi1/https-ogdenelectrician.org-/main/temp-taxidermy/taxidermy-03.webp.b64' -o /tmp/image.b64
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer $UPLOAD_JWT" \
+            --form-string "92c52077b585735585772061ba0f2653=$(cat /tmp/image.b64)" \
+            "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/assets/upload?base64=true"
