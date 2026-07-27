@@ -18,11 +18,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Upload images to Cloudflare KV
         env:
-          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_TOKEN_PRIMARY: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_TOKEN_WRANGLER: ${{ secrets.CF_API_TOKEN }}
+          CF_TOKEN_ALT: ${{ secrets.CLOUDFLARE_TOKEN }}
+          CF_TOKEN_SHORT: ${{ secrets.CF_TOKEN }}
           ACCOUNT_ID: ce0b2ff32c4f7327c83e7704c33a7c8c
           NAMESPACE_ID: bae7c4d3030b47cdaa2a46f6a433c17b
         run: |
           set -euo pipefail
+          CF_TOKEN="${CF_TOKEN_PRIMARY:-${CF_TOKEN_WRANGLER:-${CF_TOKEN_ALT:-${CF_TOKEN_SHORT:-}}}}"
           test -n "$CF_TOKEN"
           for source in temp-taxidermy/*.webp.b64; do
             [ -e "$source" ] || continue
