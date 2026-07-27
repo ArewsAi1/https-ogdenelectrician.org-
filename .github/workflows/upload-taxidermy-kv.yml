@@ -1,4 +1,4 @@
-name: Upload Preference Static Asset Proof
+name: Verify and Upload Preference Asset
 
 on:
   pull_request:
@@ -10,15 +10,23 @@ jobs:
   upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Upload verified recovered WebP
+      - name: Verify payload and upload
         env:
           ACCOUNT_ID: ce0b2ff32c4f7327c83e7704c33a7c8c
-          UPLOAD_JWT: cfwau_eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FwaS53b3JrZXJzLmNsb3VkZmxhcmUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkud29ya2Vycy5jbG91ZGZsYXJlLmNvbSIsImV4cCI6MTc4NTEyNTgzNCwibmJmIjoxNzg1MTIyMjM0LCJpYXQiOjE3ODUxMjIyMzQsIm1hbmlmZXN0X2lkIjoiYTRhZTI2YTktMTQ5Ni00MDZmLWFmZjItNzY2NmYwZjYxMmY2IiwiYWNjb3VudF9pZCI6MTE1ODcwMTIwLCJ1c2Vfc3FsIjp0cnVlLCJlZGdlX2t2IjpmYWxzZSwid3JhbmdsZXJfc2luZ2xlX2Fzc2V0X3VwbG9hZHMiOmZhbHNlfQ.A50TGEPFgVVHU3KMoR3NFqz3hLoaUTHowp9n46xTaYHPGF4Xp7JA1RnT5UE3G5ewIddiLyZRNXNasOtB6-KgBA
+          UPLOAD_JWT: cfwau_eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FwaS53b3JrZXJzLmNsb3VkZmxhcmUuY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkud29ya2Vycy5jbG91ZGZsYXJlLmNvbSIsImV4cCI6MTc4NTEyNTk4NiwibmJmIjoxNzg1MTIyMzg2LCJpYXQiOjE3ODUxMjIzODYsIm1hbmlmZXN0X2lkIjoiZGMwNWE0ZmMtYWVlYi00MzgwLTgyMTEtY2MzZGM0Yzg5ZTE5IiwiYWNjb3VudF9pZCI6MTE1ODcwMTIwLCJ1c2Vfc3FsIjp0cnVlLCJlZGdlX2t2IjpmYWxzZSwid3JhbmdsZXJfc2luZ2xlX2Fzc2V0X3VwbG9hZHMiOmZhbHNlfQ.L49q0fP-1yoogg1b2vsxPh0vo0-2AurKm5o1DyQJ7EyxGPs19kTszbogNfPiT3P3RtyXi_h_XVhrLqh94xz0AQ
         run: |
           set -euo pipefail
           curl -fsSL 'https://raw.githubusercontent.com/ArewsAi1/https-ogdenelectrician.org-/main/temp-taxidermy/taxidermy-03.webp.b64' -o /tmp/image.b64
-          curl --fail-with-body --silent --show-error \
+          base64 --decode /tmp/image.b64 > /tmp/image.webp
+          echo "BASE64_BYTES=$(wc -c < /tmp/image.b64)"
+          echo "IMAGE_BYTES=$(wc -c < /tmp/image.webp)"
+          echo "IMAGE_MD5=$(md5sum /tmp/image.webp | cut -d' ' -f1)"
+          value=$(cat /tmp/image.b64)
+          status=$(curl --silent --show-error -o /tmp/response.json -w '%{http_code}' \
             -X POST \
             -H "Authorization: Bearer $UPLOAD_JWT" \
-            --form-string "92c52077b585735585772061ba0f2653=$(cat /tmp/image.b64)" \
-            "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/assets/upload?base64=true"
+            -F "92c52077b585735585772061ba0f2653=${value}" \
+            "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/assets/upload?base64=true")
+          echo "HTTP_STATUS=$status"
+          cat /tmp/response.json
+          test "$status" = "201"
